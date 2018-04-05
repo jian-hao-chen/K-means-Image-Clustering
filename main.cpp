@@ -10,7 +10,6 @@
 #define NUM_TOTAL_IMAGE 1048
 #define NUM_CLASS 6
 #define MAX_EPOCH 20
-#define HISTORGAM_SCALE 64
 
 using namespace cimg_library;
 typedef CImg<unsigned char> Image;
@@ -25,7 +24,7 @@ struct Feature
     int label;
 };
 
-int read_dataset(char *list, Image *dst, Feature *feature_vector)
+int read_dataset(char *list, Image *dst, Feature *feature_vector, int *count)
 {
     std::map<int, std::string> dict;
     dict[0] = "airplane";
@@ -44,13 +43,14 @@ int read_dataset(char *list, Image *dst, Feature *feature_vector)
         dst[idx].load(buffer);
         feature_vector[idx].name = buffer;
 
-        for (int i = 0; i < NUM_CLASS; i++)
+        for (int _class = 0; _class < NUM_CLASS; _class++)
         {
             // each feature_vector[idx].name have "./ObjectDataset/" which consists
             // of 15 charaters, so find the label at the 16th character.
-            if (feature_vector[idx].name.find(dict[i], 15) != std::string::npos)
+            if (feature_vector[idx].name.find(dict[_class], 15) != std::string::npos)
             {
-                feature_vector[idx].label = i;
+                feature_vector[idx].label = _class;
+                count[_class]++;
                 break;
             }
         }
@@ -122,9 +122,9 @@ float Euclidean_dist(Feature x1, Feature x2)
     return std::sqrt(result);
 }
 
-float get_accuracy(std::vector<Feature> *classes)
+float get_accuracy(std::vector<Feature> *classes, int *count, float *class_acc)
 {
-    // accuracy = (num_correct / all_element)
+    // accuracy = (num_correct / num_element)
     float acc = 0;
     for (int _class = 0; _class < NUM_CLASS; _class++)
     {
@@ -133,8 +133,10 @@ float get_accuracy(std::vector<Feature> *classes)
         for (int i = 1; i < classes[_class].size(); i++)
         {
             if (classes[_class][i].label == _class)
-                acc++;
+                class_acc[_class]++;
         }
+        acc += class_acc[_class];
+        class_acc[_class] = class_acc[_class] / count[_class];
     }
 
     return acc / NUM_TOTAL_IMAGE;
@@ -168,11 +170,12 @@ void update(std::vector<Feature> *classes)
     }
 }
 
-int k_means(Feature *feature_arr, std::vector<Feature> *classes)
+int k_means(Feature *feature_arr, std::vector<Feature> *classes, int *count)
 {
     float distance; // the distance between 2 feature vector
     float temp;
     float accuracy;
+    float class_accuracy[NUM_CLASS] = {0};
     int min_class;
 
     for (int epoch = 0; epoch < MAX_EPOCH; epoch++)
@@ -194,8 +197,10 @@ int k_means(Feature *feature_arr, std::vector<Feature> *classes)
             classes[min_class].push_back(feature_arr[idx]);
         }
 
-        accuracy = get_accuracy(classes);
-        std::cout << "Epoch: " << epoch << ", Accuracy: " << accuracy << std::endl;
+        accuracy = get_accuracy(classes, count, class_accuracy);
+        std::cout << " Epoch: " << epoch << ", Total Accuracy: " << accuracy << std::endl;
+        for (int _class = 0; _class < NUM_CLASS; _class++)
+            std::cout << "\t class[" << _class << "]: " << class_accuracy[_class] << std::endl;
         if (epoch == MAX_EPOCH - 1)
             break;
         update(classes);
@@ -209,6 +214,7 @@ int main()
     Image src[NUM_TOTAL_IMAGE];
     Feature feature_vector[NUM_TOTAL_IMAGE];
     std::vector<Feature> classes[NUM_CLASS];
+    int count[NUM_CLASS] = {0};
     /* 
         There are 6 classes.
         0: airplane,
@@ -219,14 +225,14 @@ int main()
         5: tower
     */
 
-    ret = read_dataset("list.txt", src, feature_vector);
+    ret = read_dataset("list.txt", src, feature_vector, count);
     ret = feature_extract(src, feature_vector, NUM_TOTAL_IMAGE);
     ret = initialize(feature_vector, classes);
 
     // shuffle the dataset to validation k-means algorithm.
     std::random_shuffle(feature_vector, feature_vector + NUM_TOTAL_IMAGE);
 
-    ret = k_means(feature_vector, classes);
+    ret = k_means(feature_vector, classes, count);
 
     if (ret == 0)
         std::cout << "Done." << std::endl;
