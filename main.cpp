@@ -19,7 +19,7 @@ struct Feature
     std::string name;
     float mean[3];
     float var[3];
-    int histogram[256];
+    float histogram[256];
     int label;
 };
 
@@ -65,19 +65,23 @@ int feature_extract(Image *src, Feature *dst, int num_image)
     {
         for (int channel = 0; channel < 3; channel++)
         {
-            dst[i].mean[channel] = (float)(src[i].get_channel(channel).mean());
-            dst[i].var[channel] = (float)(src[i].get_channel(channel).variance());
+            dst[i].mean[channel] = src[i].get_channel(channel).mean() / 256.0;
+            dst[i].var[channel] = std::sqrt((src[i].get_channel(channel).variance())) / 256.0;
         }
     }
 
     CImg<float> temp;
+    float area;
 
     for (int i = 0; i < num_image; i++)
     {
         temp = src[i].get_histogram(256);
+        area = src[i].width() * src[i].height();
         for (int scale = 0; scale < 256; scale++)
         {
-            dst[i].histogram[scale] = temp(scale, 0, 0, 0); // Image(x, y, z, channel);
+            // Image(x, y, z, channel), should be normalized.
+            // Because the sizes of pictures are different.
+            dst[i].histogram[scale] = temp(scale, 0, 0, 0) / area;
         }
     }
     return 0;
@@ -100,12 +104,7 @@ int initialize(Feature *feature_arr, std::vector<Feature> *classes)
     return 0;
 }
 
-int k_means(Feature *feature_arr, std::vector<Feature> *classes)
-{
-    return 0;
-}
-
-float mse(Feature x1, Feature x2)
+float Euclidean_dist(Feature x1, Feature x2)
 {
     // loss function for k-means feature comparison
     float result = 0;
@@ -122,6 +121,54 @@ float mse(Feature x1, Feature x2)
     }
 
     return std::sqrt(result);
+}
+
+float get_accuracy(std::vector<Feature> *classes)
+{
+    // accuracy = (num_correct / all_element)
+    float acc = 0;
+    for (int _class = 0; _class < NUM_CLASS; _class++)
+    {
+        // the first element is temporary cluster center, not a real picture.
+        // so the index start from 1.
+        for (int i = 1; i < classes[_class].size(); i++)
+        {
+            if (classes[_class][i].label == _class)
+                acc++;
+        }
+    }
+
+    return acc / NUM_TOTAL_IMAGE;
+}
+
+int k_means(Feature *feature_arr, std::vector<Feature> *classes)
+{
+    float distance; // the distance between 2 feature vector
+    float temp;
+    float accuracy;
+    int min_class;
+
+    for (int idx = 0; idx < NUM_TOTAL_IMAGE; idx++)
+    {
+        distance = 999999;
+        for (int _class = 0; _class < NUM_CLASS; _class++)
+        {
+            // the first element in each "classes" vector is a temporary cluster
+            // center, so compare "feature vectors" with classes[_class][0].
+            temp = Euclidean_dist(feature_arr[idx], classes[_class][0]);
+            if (temp < distance)
+            {
+                distance = temp;
+                min_class = _class;
+            }
+        }
+        classes[min_class].push_back(feature_arr[idx]);
+    }
+
+    accuracy = get_accuracy(classes);
+    std::cout << "Accuracy: " << accuracy << std::endl;
+
+    return 0;
 }
 
 int main()
@@ -146,6 +193,8 @@ int main()
 
     // shuffle the dataset to validation k-means algorithm.
     std::random_shuffle(feature_vector, feature_vector + NUM_TOTAL_IMAGE);
+
+    ret = k_means(feature_vector, classes);
 
     if (ret == 0)
         std::cout << "Done." << std::endl;
