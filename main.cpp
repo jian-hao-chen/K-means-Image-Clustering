@@ -15,6 +15,7 @@
 #define NUM_TOTAL_IMAGE 1048
 #define NUM_CLASS 6
 #define MAX_EPOCH 10
+//#define RANDOM_INITIAL // choose initial method.
 
 using namespace cimg_library;
 
@@ -25,7 +26,6 @@ struct Feature
 {
     std::string name;
     float mean[3];
-    float var[3];
     float histogram[3][256];
     int label;
 };
@@ -77,8 +77,8 @@ int feature_extract(Image *src, Feature *dst, int num_image)
 
         for (int channel = 0; channel < 3; channel++)
         {
-            dst[i].mean[channel] = src[i].get_channel(channel).mean() / 256.0;
-            dst[i].var[channel] = std::sqrt((src[i].get_channel(channel).variance())) / 256.0;
+            // don't know why it's better after dividing 128.
+            dst[i].mean[channel] = src[i].get_channel(channel).mean() / 128.0;
 
             temp = src[i].get_channel(channel).get_histogram(256, 0, 255);
             for (int scale = 0; scale < 256; scale++)
@@ -94,19 +94,21 @@ int feature_extract(Image *src, Feature *dst, int num_image)
 
 int initialize(Feature *feature_arr, std::vector<Feature> *classes)
 {
-    // pick one feature of each class into vector as initial pattern.
     int current_class = 0, idx = 0;
 
-    // while (current_class < NUM_CLASS)
-    // {
-    //     if (feature_arr[idx].label == current_class)
-    //     {
-    //         classes[current_class].push_back(feature_arr[idx]);
-    //         current_class++;
-    //     }
-    //     idx++;
-    // }
-
+#ifndef RANDOM_INITIAL
+    // pick the first feature of each class into vector as initial pattern.
+    while (current_class < NUM_CLASS)
+    {
+        if (feature_arr[idx].label == current_class)
+        {
+            classes[current_class].push_back(feature_arr[idx]);
+            current_class++;
+        }
+        idx++;
+    }
+#else
+    // pick a random feature of each class into vector as initial pattern.
     while(current_class < NUM_CLASS){
         idx = rand() % NUM_TOTAL_IMAGE;
         if(feature_arr[idx].label == current_class){
@@ -114,6 +116,7 @@ int initialize(Feature *feature_arr, std::vector<Feature> *classes)
             current_class++;
         }
     }
+#endif
 
     return 0;
 }
@@ -126,7 +129,6 @@ float Euclidean_dist(Feature x1, Feature x2)
     for (int channel = 0; channel < 3; channel++)
     {
         result += std::pow((x1.mean[channel] - x2.mean[channel]), 2);
-        result += std::pow((x1.var[channel] - x2.var[channel]), 2);
         for (int scale = 0; scale < 256; scale++)
         {
             result += std::pow((x1.histogram[channel][scale] - x2.histogram[channel][scale]), 2);
@@ -184,7 +186,7 @@ void update(std::vector<Feature> *classes)
     for (int _class = 0; _class < NUM_CLASS; _class++)
     {
         // Feature = { name, mean[3], var[3], histogram[256], label }
-        Feature temp = {"", {0}, {0}, {0}, _class};
+        Feature temp = {"", {0}, {0}, _class};
         int num_element = classes[_class].size();
 
         for (int i = 1; i < num_element; i++)
@@ -192,7 +194,6 @@ void update(std::vector<Feature> *classes)
             for (int channel = 0; channel < 3; channel++)
             {
                 temp.mean[channel] += classes[_class][i].mean[channel] / num_element;
-                temp.var[channel] += classes[_class][i].var[channel] / num_element;
                 for (int scale = 0; scale < 256; scale++)
                 {
                     temp.histogram[channel][scale] += classes[_class][i].histogram[channel][scale] / num_element;
@@ -259,7 +260,9 @@ int main()
         5: tower
     */
 
+    printf("reading data ...\n");
     ret = read_dataset("list.txt", src, feature_vector);
+    printf("feature extracting ...\n");
     ret = feature_extract(src, feature_vector, NUM_TOTAL_IMAGE);
     ret = initialize(feature_vector, classes);
 
